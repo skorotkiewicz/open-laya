@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stack / Tetris with Laya</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; background: #101b1b; color: #f1ebd9; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 15% 0%, #28403a, #101b1b 48%); }
+    .shell { max-width: 1050px; margin: auto; padding: 32px 20px 48px; }
+    header { display: flex; justify-content: space-between; align-items: end; gap: 20px; border-bottom: 1px solid #4e625b; padding-bottom: 20px; margin-bottom: 30px; }
+    .eyebrow, .label { color: #b6c3ac; font-size: 11px; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { font-size: clamp(36px, 8vw, 70px); line-height: .9; letter-spacing: -.09em; margin: 10px 0 0; }
+    h1 span { color: #e9aa62; }
+    header p { max-width: 270px; line-height: 1.5; color: #b6c3ac; font-size: 13px; margin: 0; text-align: right; }
+    main { display: grid; grid-template-columns: minmax(280px, 1fr) 290px; gap: 30px; align-items: start; }
+    .arena { background: #1d302e; border: 1px solid #50655d; padding: 16px; box-shadow: 12px 12px 0 #091312; display: flex; justify-content: center; }
+    #board { width: min(100%, 300px); height: auto; display: block; background: #101e1d; }
+    aside { display: grid; gap: 16px; }
+    .card { border: 1px solid #50655d; background: #1b2b29; padding: 18px; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .number { font-size: 27px; margin-top: 6px; font-weight: 700; }
+    #next { display: block; margin: 10px auto 0; width: 100px; height: 100px; }
+    button { font: inherit; font-weight: 700; letter-spacing: .04em; cursor: pointer; border: 1px solid #d5b890; background: #e9aa62; color: #192420; padding: 13px 15px; transition: filter .15s, transform .15s; }
+    button:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-2px); }
+    button:focus-visible { outline: 3px solid #f1ebd9; outline-offset: 3px; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .secondary { background: transparent; color: #f1ebd9; border-color: #687b71; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 15px; }
+    #ai { width: 100%; background: #9dccb4; border-color: #9dccb4; }
+    #message { font-size: 12px; line-height: 1.5; min-height: 38px; color: #e9c49a; margin: 12px 0 0; }
+    .help { line-height: 1.9; color: #c5d0bc; font-size: 12px; }
+    kbd { border: 1px solid #64766a; border-bottom-width: 2px; padding: 2px 5px; color: #f1ebd9; }
+    .touch { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 20px; }
+    .touch button { padding: 15px 0; font-size: 19px; touch-action: manipulation; }
+    footer { margin-top: 34px; color: #8fa497; font-size: 11px; letter-spacing: .04em; }
+    @media (max-width: 690px) { header { align-items: start; flex-direction: column; } header p { text-align: left; } main { grid-template-columns: 1fr; } aside { grid-template-columns: repeat(2, minmax(0, 1fr)); } .controls, .ai-card { grid-column: 1 / -1; } .shell { padding: 22px 14px 36px; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div><div class="eyebrow">A game with a second opinion</div><h1>STACK<span>.</span></h1></div>
+      <p>Classic falling blocks. When you want help, let Laya choose a landing spot through the decision API.</p>
+    </header>
+    <main>
+      <div class="arena"><canvas id="board" width="300" height="600" role="img" aria-label="Tetris board"></canvas></div>
+      <aside>
+        <div class="card stats">
+          <div><div class="label">Score</div><div class="number" id="score">0</div></div>
+          <div><div class="label">Lines</div><div class="number" id="lines">0</div></div>
+          <div><div class="label">Level</div><div class="number" id="level">1</div></div>
+          <div><div class="label">Next</div><canvas id="next" width="100" height="100" aria-label="Next piece"></canvas></div>
+        </div>
+        <div class="card ai-card">
+          <div class="label">Decision engine <span id="connection">· checking</span></div>
+          <p class="help">AI drop sends the board and up to eight legal placements to <code>/v1/decisions</code>. Laya picks one. The game stays playable if the API is offline.</p>
+          <button id="ai" type="button">ASK LAYA TO DROP</button>
+          <p id="message" role="status" aria-live="polite">Ready when you are.</p>
+        </div>
+        <div class="card controls">
+          <div class="label">Controls</div>
+          <p class="help"><kbd>←</kbd> <kbd>→</kbd> move · <kbd>↑</kbd> rotate<br><kbd>↓</kbd> soft drop · <kbd>Space</kbd> hard drop<br><kbd>P</kbd> pause · <kbd>R</kbd> new game · <kbd>H</kbd> AI drop</p>
+          <div class="actions"><button id="restart" type="button">NEW GAME</button><button id="pause" class="secondary" type="button">PAUSE</button></div>
+          <div class="touch" aria-label="Touch controls">
+            <button class="secondary" data-action="left" type="button" aria-label="Move left">←</button>
+            <button class="secondary" data-action="rotate" type="button" aria-label="Rotate">↻</button>
+            <button class="secondary" data-action="right" type="button" aria-label="Move right">→</button>
+            <button class="secondary" data-action="down" type="button" aria-label="Soft drop">↓</button>
+          </div>
+        </div>
+      </aside>
+    </main>
+    <footer>10 × 20 · seven-piece bag · AI is optional</footer>
+  </div>
+  <script>
+    const W = 10, H = 20, CELL = 30;
+    const colors = ['#101e1d', '#e9aa62', '#e6cc72', '#7cc9c4', '#97c675', '#e7826b', '#76a7b0', '#d7a678'];
+    const shapes = [
+      [[1, 1, 1, 1]], [[1, 1], [1, 1]], [[0, 1, 0], [1, 1, 1]],
+      [[1, 1, 0], [0, 1, 1]], [[0, 1, 1], [1, 1, 0]],
+      [[1, 0, 0], [1, 1, 1]], [[0, 0, 1], [1, 1, 1]]
+    ];
+    const canvas = document.getElementById('board'), ctx = canvas.getContext('2d');
+    const nextCtx = document.getElementById('next').getContext('2d');
+    const scoreEl = document.getElementById('score'), linesEl = document.getElementById('lines');
+    const levelEl = document.getElementById('level'), message = document.getElementById('message');
+    const aiButton = document.getElementById('ai'), pauseButton = document.getElementById('pause');
+    let board, piece, nextType, bag, score, lines, playing, paused, pending = false, turn = 0;
+    let lastFrame = 0, elapsed = 0;
+
+    function pick() {
+      if (!bag.length) {
+        bag = Array.from({length: shapes.length}, (_, i) => i);
+        for (let i = bag.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [bag[i], bag[j]] = [bag[j], bag[i]];
+        }
+      }
+      return bag.pop();
+    }
+    function rotate(matrix) { return matrix[0].map((_, x) => matrix.map(row => row[x]).reverse()); }
+    function hits(matrix, x, y, grid = board) {
+      return matrix.some((row, dy) => row.some((cell, dx) => cell && (
+        x + dx < 0 || x + dx >= W || y + dy >= H || (y + dy >= 0 && grid[y + dy][x + dx])
+      )));
+    }
+    function spawn() {
+      piece = {type: nextType, shape: shapes[nextType], x: 0, y: 0};
+      nextType = pick();
+      piece.x = Math.floor((W - piece.shape[0].length) / 2);
+      turn++;
+      if (hits(piece.shape, piece.x, piece.y)) {
+        playing = false;
+        message.textContent = 'Stack reached the top. Start a new game.';
+      }
+      renderNext();
+    }
+    function newGame() {
+      board = Array.from({length: H}, () => Array(W).fill(0));
+      bag = []; score = 0; lines = 0; elapsed = 0; playing = true; paused = false;
+      nextType = pick(); spawn();
+      message.textContent = 'Ready when you are.';
+      pauseButton.textContent = 'PAUSE';
+      updateStats(); draw();
+    }
+    function updateStats() {
+      scoreEl.textContent = score.toLocaleString();
+      linesEl.textContent = lines;
+      levelEl.textContent = 1 + Math.floor(lines / 10);
+    }
+    function stamp(matrix, x, y, type, grid = board) {
+      matrix.forEach((row, dy) => row.forEach((cell, dx) => { if (cell && y + dy >= 0) grid[y + dy][x + dx] = type + 1; }));
+    }
+    function clearRows() {
+      let count = 0;
+      for (let y = H - 1; y >= 0; y--) {
+        if (board[y].every(Boolean)) {
+          board.splice(y, 1); board.unshift(Array(W).fill(0));
+          count++; y++;
+        }
+      }
+      if (count) {
+        score += [0, 100, 300, 500, 800][count] * (1 + Math.floor(lines / 10));
+        lines += count; updateStats();
+      }
+    }
+    function lock() { stamp(piece.shape, piece.x, piece.y, piece.type); clearRows(); spawn(); }
+    function step() {
+      if (!hits(piece.shape, piece.x, piece.y + 1)) piece.y++;
+      else lock();
+    }
+    function act(action) {
+      if (!playing || paused) return;
+      if (action === 'left' && !hits(piece.shape, piece.x - 1, piece.y)) piece.x--;
+      if (action === 'right' && !hits(piece.shape, piece.x + 1, piece.y)) piece.x++;
+      if (action === 'down') { step(); score++; updateStats(); }
+      if (action === 'rotate') {
+        const turned = rotate(piece.shape);
+        for (const dx of [0, -1, 1, -2, 2]) {
+          if (!hits(turned, piece.x + dx, piece.y)) { piece.shape = turned; piece.x += dx; break; }
+        }
+      }
+      if (action === 'drop') {
+        while (!hits(piece.shape, piece.x, piece.y + 1)) { piece.y++; score += 2; }
+        updateStats(); lock();
+      }
+      draw();
+    }
+    function cell(context, x, y, size, type, ghost = false) {
+      const px = x * size, py = y * size;
+      context.fillStyle = ghost ? '#49635b' : colors[type];
+      context.fillRect(px + 1, py + 1, size - 2, size - 2);
+      if (!ghost && type) {
+        context.fillStyle = 'rgba(255,255,255,.18)';
+        context.fillRect(px + 3, py + 3, size - 6, 3);
+      }
+    }
+    function renderNext() {
+      nextCtx.fillStyle = '#101e1d'; nextCtx.fillRect(0, 0, 100, 100);
+      const shape = shapes[nextType], size = 22;
+      const ox = Math.floor((100 - shape[0].length * size) / 2), oy = Math.floor((100 - shape.length * size) / 2);
+      shape.forEach((row, y) => row.forEach((block, x) => {
+        if (block) {
+          nextCtx.fillStyle = colors[nextType + 1];
+          nextCtx.fillRect(ox + x * size + 1, oy + y * size + 1, size - 2, size - 2);
+        }
+      }));
+    }
+    function draw() {
+      ctx.fillStyle = '#101e1d'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      board.forEach((row, y) => row.forEach((type, x) => {
+        if (type) cell(ctx, x, y, CELL, type);
+        else { ctx.strokeStyle = '#253835'; ctx.strokeRect(x * CELL + .5, y * CELL + .5, CELL, CELL); }
+      }));
+      if (playing) {
+        let ghostY = piece.y;
+        while (!hits(piece.shape, piece.x, ghostY + 1)) ghostY++;
+        piece.shape.forEach((row, y) => row.forEach((block, x) => {
+          if (block && ghostY + y >= 0) cell(ctx, piece.x + x, ghostY + y, CELL, piece.type + 1, true);
+        }));
+      }
+      if (piece) piece.shape.forEach((row, y) => row.forEach((block, x) => {
+        if (block && piece.y + y >= 0) cell(ctx, piece.x + x, piece.y + y, CELL, piece.type + 1);
+      }));
+      if (!playing || paused) {
+        ctx.fillStyle = 'rgba(16,30,29,.82)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.textAlign = 'center'; ctx.fillStyle = '#f1ebd9'; ctx.font = 'bold 24px monospace';
+        ctx.fillText(playing ? 'PAUSED' : 'GAME OVER', 150, 285);
+        ctx.font = '12px monospace'; ctx.fillText(playing ? 'Press P to continue' : 'Press R to restart', 150, 315);
+      }
+    }
+    function frame(now) {
+      const delta = Math.min(now - lastFrame, 100); lastFrame = now;
+      if (playing && !paused) {
+        elapsed += delta;
+        const speed = Math.max(95, 650 - Math.floor(lines / 10) * 55);
+        if (elapsed >= speed) { step(); elapsed = 0; draw(); }
+      }
+      requestAnimationFrame(frame);
+    }
+
+    function options() {
+      const moves = [], seen = new Set();
+      let shape = piece.shape;
+      for (let rotation = 0; rotation < 4; rotation++, shape = rotate(shape)) {
+        const signature = JSON.stringify(shape);
+        if (seen.has(signature)) continue;
+        seen.add(signature);
+        for (let x = 0; x <= W - shape[0].length; x++) {
+          if (hits(shape, x, 0)) continue;
+          let y = 0;
+          while (!hits(shape, x, y + 1)) y++;
+          const grid = board.map(row => row.slice());
+          stamp(shape, x, y, piece.type, grid);
+          const cleared = grid.filter(row => row.every(Boolean)).length;
+          const remaining = grid.filter(row => !row.every(Boolean));
+          while (remaining.length < H) remaining.unshift(Array(W).fill(0));
+          let holes = 0;
+          const heights = Array.from({length: W}, (_, col) => {
+            let top = H;
+            for (let row = 0; row < H; row++) {
+              if (remaining[row][col] && top === H) top = row;
+              if (!remaining[row][col] && top !== H) holes++;
+            }
+            return H - top;
+          });
+          const rough = heights.slice(1).reduce((n, h, i) => n + Math.abs(h - heights[i]), 0);
+          const max = Math.max(...heights);
+          moves.push({id: `m${moves.length}`, rotation, x, y, shape,
+            cleared, holes, max, score: cleared * 45 - holes * 8 - max * 2 - rough});
+        }
+      }
+      return moves.sort((a, b) => b.score - a.score).slice(0, 8);
+    }
+    async function aiDrop() {
+      if (!playing || paused || pending) return;
+      const moves = options();
+      if (!moves.length) { message.textContent = 'No legal placements left.'; return; }
+      const currentTurn = turn;
+      const criteria = Object.fromEntries(moves.map(move => [move.id,
+        `rotation ${move.rotation}, column ${move.x}, clears ${move.cleared} lines, holes ${move.holes}, peak ${move.max}`]));
+      pending = true; aiButton.disabled = true; message.textContent = 'Asking Laya for a placement…';
+      try {
+        const response = await fetch('/v1/decisions', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({state: {
+            piece: 'I O T Z S L J'[piece.type * 2],
+            board: board.map(row => row.map(cell => cell ? '#' : '.').join('')).join('/'),
+            goal: 'Clear rows, avoid holes and tall stacks.'
+          }, questions: {move: {type: 'choice',
+            instructions: 'Choose the best Tetris placement to keep the board low and clear lines.', criteria}}})
+        });
+        if (!response.ok) throw new Error(`API returned ${response.status}`);
+        const result = await response.json();
+        if (!playing || paused || turn !== currentTurn) { message.textContent = 'Board changed. Ask again.'; return; }
+        const move = moves.find(item => item.id === result.answers?.move?.choice);
+        if (!move) throw new Error('Laya did not return a valid placement');
+        piece.shape = move.shape; piece.x = move.x; piece.y = move.y;
+        lock(); draw();
+        message.textContent = `Laya chose column ${move.x + 1}, rotation ${move.rotation}. ${move.cleared} line(s) cleared.`;
+      } catch (error) {
+        message.textContent = `AI drop unavailable: ${error.message}. Keep playing manually.`;
+      } finally { pending = false; aiButton.disabled = false; }
+    }
+    document.getElementById('restart').addEventListener('click', newGame);
+    pauseButton.addEventListener('click', () => {
+      if (!playing) return;
+      paused = !paused; elapsed = 0; pauseButton.textContent = paused ? 'RESUME' : 'PAUSE'; draw();
+    });
+    aiButton.addEventListener('click', aiDrop);
+    document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('pointerdown', event => {
+      event.preventDefault(); act(button.dataset.action);
+    }));
+    document.addEventListener('keydown', event => {
+      const keys = {ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'rotate', ArrowDown: 'down', ' ': 'drop'};
+      if (keys[event.key]) { event.preventDefault(); act(keys[event.key]); }
+      if (event.repeat) return;
+      if (event.key.toLowerCase() === 'r') newGame();
+      if (event.key.toLowerCase() === 'h') aiDrop();
+      if (event.key.toLowerCase() === 'p') pauseButton.click();
+    });
+    newGame(); requestAnimationFrame(frame);
+    fetch('/health').then(response => {
+      if (!response.ok) throw new Error();
+      document.getElementById('connection').textContent = '· online';
+    }).catch(() => { document.getElementById('connection').textContent = '· offline'; });
+  </script>
+</body>
+</html>

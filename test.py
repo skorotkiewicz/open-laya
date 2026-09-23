@@ -35,6 +35,14 @@ r = requests.get(BASE_URL + "/health", timeout=10)
 check("health: status 200", r.status_code == 200, f"got {r.status_code}: {r.text[:200]}")
 check("health: model field", r.json().get("model") == "laya", str(r.json()))
 
+r = requests.get(BASE_URL + "/presets", timeout=10)
+check("presets: triage available", r.status_code == 200 and "triage" in r.json(), r.text[:200])
+r = post("/route", {"state": "hello", "task": "typed_decisions",
+                    "questions": {"q": {"type": "noul", "instructions": "Test?"}}})
+check("route: explicit task", r.status_code == 200 and r.json().get("model") == "typed-decisions", r.text[:200])
+r = requests.get(BASE_URL + "/models", timeout=10)
+check("models: admin token required", r.status_code in (401, 503), r.text[:200])
+
 # 2. Jev-style decisions request (same shape as jev.py)
 email = {
     "from": "customer@acme.com",
