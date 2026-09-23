@@ -22,6 +22,7 @@
     .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     .number { font-size: 27px; margin-top: 6px; font-weight: 700; }
     #next { display: block; margin: 10px auto 0; width: 100px; height: 100px; }
+    select { width: 100%; margin: 4px 0 14px; padding: 10px; font: inherit; color: #f1ebd9; background: #101e1d; border: 1px solid #687b71; }
     button { font: inherit; font-weight: 700; letter-spacing: .04em; cursor: pointer; border: 1px solid #d5b890; background: #e9aa62; color: #192420; padding: 13px 15px; transition: filter .15s, transform .15s; }
     button:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-2px); }
     button:focus-visible { outline: 3px solid #f1ebd9; outline-offset: 3px; }
@@ -56,6 +57,13 @@
         <div class="card ai-card">
           <div class="label">Decision engine <span id="connection">· checking</span></div>
           <p class="help">AI drop sends the board and up to eight legal placements to <code>/v1/decisions</code>. Laya picks one. The game stays playable if the API is offline.</p>
+          <label class="label" for="model">Checkpoint</label>
+          <select id="model">
+            <option value="">Auto (language routing)</option>
+            <option value="typed-decisions">Typed decisions</option>
+            <option value="english">English</option>
+            <option value="multilingual">Multilingual</option>
+          </select>
           <button id="ai" type="button">ASK LAYA TO DROP</button>
           <p id="message" role="status" aria-live="polite">Ready when you are.</p>
         </div>
@@ -155,7 +163,10 @@
       if (!playing || paused) return;
       if (action === 'left' && !hits(piece.shape, piece.x - 1, piece.y)) piece.x--;
       if (action === 'right' && !hits(piece.shape, piece.x + 1, piece.y)) piece.x++;
-      if (action === 'down') { step(); score++; updateStats(); }
+      if (action === 'down') {
+        if (!hits(piece.shape, piece.x, piece.y + 1)) { piece.y++; score++; updateStats(); }
+        else lock();
+      }
       if (action === 'rotate') {
         const turned = rotate(piece.shape);
         for (const dx of [0, -1, 1, -2, 2]) {
@@ -262,11 +273,12 @@
       const criteria = Object.fromEntries(moves.map(move => [move.id,
         `rotation ${move.rotation}, column ${move.x}, clears ${move.cleared} lines, holes ${move.holes}, peak ${move.max}`]));
       pending = true; aiButton.disabled = true; message.textContent = 'Asking Laya for a placement…';
+      const selectedModel = document.getElementById('model').value;
       try {
         const response = await fetch('/v1/decisions', {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({state: {
-            piece: 'I O T Z S L J'[piece.type * 2],
+          method: 'POST', headers: {'Content-Type': 'application/json'}, signal: AbortSignal.timeout(30000),
+          body: JSON.stringify({...(selectedModel ? {model: selectedModel} : {}), state: {
+            piece: 'I O T Z S J L'[piece.type * 2],
             board: board.map(row => row.map(cell => cell ? '#' : '.').join('')).join('/'),
             goal: 'Clear rows, avoid holes and tall stacks.'
           }, questions: {move: {type: 'choice',
