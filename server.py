@@ -20,11 +20,14 @@ import uvicorn
 from fastapi.responses import FileResponse, Response
 from laya.serve import build_router, create_app
 from laya.mcp.tools import ToolError, laya_predict, laya_preset, laya_route, laya_status
+from mcp.server.transport_security import TransportSecuritySettings
 
 try:
     from mcp.server.mcpserver import MCPServer as FastMCP  # MCP 2.x
+    mcp_v2 = True
 except ModuleNotFoundError:
     from mcp.server.fastmcp import FastMCP  # MCP 1.x
+    mcp_v2 = False
 
 # Keep model loads lazy unless the operator explicitly asks for startup preload.
 os.environ.setdefault("LAYA_PRELOAD", "0")
@@ -42,7 +45,10 @@ app.add_api_route("/decisions", systemone, methods=["POST"], include_in_schema=F
 #     return FileResponse(Path(__file__).with_name("tetris.html"))
 
 
-mcp = FastMCP("laya")
+mcp_security = TransportSecuritySettings(
+    allowed_hosts=["127.0.0.1:8000", "localhost:8000", "192.168.0.124:8000"],
+)
+mcp = FastMCP("laya") if mcp_v2 else FastMCP("laya", transport_security=mcp_security)
 
 
 def mcp_result(fn, *args, **kwargs):
@@ -84,7 +90,8 @@ def mcp_preset(preset: str, state: dict) -> dict:
 
 
 # A mounted app does not inherit the parent's lifespan or /v1/systemone auth.
-mcp_app = mcp.streamable_http_app()
+mcp_app = (mcp.streamable_http_app(transport_security=mcp_security)
+           if mcp_v2 else mcp.streamable_http_app())
 original_lifespan = app.router.lifespan_context
 
 
