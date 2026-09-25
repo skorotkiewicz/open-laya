@@ -1,0 +1,87 @@
+"""Run with python -B test_mcp_http.py."""
+
+import importlib.util
+import json
+import os
+import sys
+import types
+from pathlib import Path
+from unittest.mock import patch
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+
+class Router:
+    loaded = []
+
+    def predict(self, state, questions, model=None):
+        return {"answers": {"refund": {"noul": 0.9}}, "routing": {"model": model}}
+
+
+laya = types.ModuleType("laya")
+laya.__path__ = []
+serve = types.ModuleType("laya.serve")
+serve.build_router = Router
+
+
+def create_app(router):
+    app = FastAPI()
+
+    @app.get("/health")
+    def health():
+        return {"status": "ok"}
+
+    @app.post("/v1/systemone")
+    def systemone():
+        return {"status": "ok"}
+
+    return app
+
+
+serve.create_app = create_app
+mcp_package = types.ModuleType("laya.mcp")
+mcp_package.__path__ = []
+tools = types.ModuleType("laya.mcp.tools")
+tools.ToolError = type("ToolError", (Exception,), {})
+tools.laya_predict = lambda state, questions, model, router: router.predict(state, questions, model)
+tools.laya_route = lambda state, questions, router: {"model": "english"}
+tools.laya_status = lambda router, preload: {"loaded": router.loaded}
+tools.laya_preset = lambda preset, state, router, preset_builder: {"preset": preset}
+
+
+def result(response):
+    data = next((line[6:] for line in response.text.splitlines() if line.startswith("data: ")),
+                response.text)
+    return json.loads(data)["result"]
+
+
+with patch.dict(sys.modules, {"laya": laya, "laya.serve": serve, "laya.mcp": mcp_package,
+                              "laya.mcp.tools": tools}), \
+     patch.dict(os.environ, {"LAYA_PRELOAD": "0", "LAYA_API_KEY": "test-key"}):
+    spec = importlib.util.spec_from_file_location("server_under_test", Path(__file__).with_name("server.py"))
+    server = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(server)
+    with TestClient(server.app, base_url="http://127.0.0.1:8000") as client:
+        assert client.get("/health").status_code == 200
+        headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+        init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                           "clientInfo": {"name": "test", "version": "1"}}}
+        assert client.post("/mcp", json=init, headers=headers).status_code == 401
+        headers["Authorization"] = "Bearer test-key"
+        response = client.post("/mcp", json=init, headers=headers)
+        assert response.status_code == 200, response.text
+        assert result(response)["serverInfo"]["name"] == "laya"
+        if response.headers.get("mcp-session-id"):
+            headers["mcp-session-id"] = response.headers["mcp-session-id"]
+        call = {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "laya_predict", "arguments": {
+                    "state": {"text": "refund"}, "model": "typed-decisions",
+                    "questions": {"refund": {"type": "noul", "instructions": "Refund?"}}}}}
+        response = client.post("/mcp", json=call, headers=headers)
+        assert response.status_code == 200, response.text
+        data = result(response)
+        assert not data.get("isError") and "typed-decisions" in str(data)
+
+print("MCP HTTP handshake, auth, and laya_predict OK")
