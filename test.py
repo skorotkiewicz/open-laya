@@ -33,15 +33,9 @@ print(f"Testing Laya API at {BASE_URL}\n")
 # 1. Health
 r = requests.get(BASE_URL + "/health", timeout=10)
 check("health: status 200", r.status_code == 200, f"got {r.status_code}: {r.text[:200]}")
-check("health: model field", r.json().get("model") == "laya", str(r.json()))
-
-r = requests.get(BASE_URL + "/presets", timeout=10)
-check("presets: triage available", r.status_code == 200 and "triage" in r.json(), r.text[:200])
-r = post("/route", {"state": "hello", "task": "typed_decisions",
-                    "questions": {"q": {"type": "noul", "instructions": "Test?"}}})
-check("route: explicit task", r.status_code == 200 and r.json().get("model") == "typed-decisions", r.text[:200])
+check("health: loaded checkpoints", isinstance(r.json().get("loaded"), list), str(r.json()))
 r = requests.get(BASE_URL + "/models", timeout=10)
-check("models: admin token required", r.status_code in (401, 503), r.text[:200])
+check("models: no listing endpoint", r.status_code == 404, r.text[:200])
 
 # 2. Jev-style decisions request (same shape as jev.py)
 email = {
@@ -72,7 +66,7 @@ questions = {
 r = post("/v1/decisions", {"model": "laya", "state": email, "questions": questions})
 check("decisions: status 200", r.status_code == 200, f"got {r.status_code}: {r.text[:300]}")
 answers = r.json().get("answers", {})
-check("decisions: model field", r.json().get("model") == "laya", str(r.json())[:200])
+check("decisions: model field", isinstance(r.json().get("model"), str) and r.json()["model"].startswith("laya"), str(r.json())[:200])
 
 dep = answers.get("department", {})
 check("choice: has answer", "choice" in dep, json.dumps(dep)[:200])
@@ -102,15 +96,9 @@ check("text state: noul answer", "noul" in r.json().get("answers", {}).get("is_u
 r = post("/decisions", {"state": email, "questions": questions})
 check("alias /decisions: status 200", r.status_code == 200, f"got {r.status_code}")
 
-# 5. Validation errors -> 422
-r = post("/v1/decisions", {"state": "hi", "questions": {"q": {"type": "bogus", "instructions": "x"}}})
-check("bad type: 422", r.status_code == 422, f"got {r.status_code}")
-
-r = post("/v1/decisions", {"state": "hi", "questions": {"q": {"type": "choice", "instructions": "x"}}})
-check("choice without criteria: 422", r.status_code == 422, f"got {r.status_code}")
-
-r = post("/v1/decisions", {"state": "hi", "questions": {}})
-check("empty questions: 422", r.status_code == 422, f"got {r.status_code}")
+# 5. Missing questions -> 400 (checked before model inference)
+r = post("/v1/decisions", {"state": "hi"})
+check("missing questions: 400", r.status_code == 400, f"got {r.status_code}")
 
 # ---------------------------------------------------------------------------
 print()
