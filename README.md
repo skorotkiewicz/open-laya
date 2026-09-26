@@ -5,8 +5,10 @@ A local HTTP API for Laya decisions and MCP tools.
 From the repository root:
 
 ```sh
-python -m pip install -e './laya-src[serve,mcp]'
-./laya/server.py
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install 'laya[serve,mcp]'
+python server.py
 ```
 
 Send a decision request:
