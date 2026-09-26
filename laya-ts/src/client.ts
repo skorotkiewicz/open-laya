@@ -18,9 +18,14 @@ export interface DecisionResult {
   routing: { model: string; reason: string };
 }
 
+export interface DecideOptions {
+  model?: "auto" | "english" | "multilingual" | "typed-decisions";
+}
+
 export async function decide(
   state: unknown,
   questions: Record<string, Question>,
+  options: DecideOptions = {},
 ): Promise<DecisionResult> {
   const baseUrl = (process.env.LAYA_BASE_URL ?? "http://192.168.0.124:8000").replace(/\/$/, "");
   const apiKey = process.env.LAYA_API_KEY;
@@ -31,7 +36,7 @@ export async function decide(
       "Content-Type": "application/json",
       ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
     },
-    body: JSON.stringify({ state, questions }),
+    body: JSON.stringify({ state, questions, ...options }),
   });
 
   if (!response.ok) {
