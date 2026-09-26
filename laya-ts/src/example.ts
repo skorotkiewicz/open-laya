@@ -1,8 +1,6 @@
 import { decide } from "./client.ts";
 
-const refund = await decide(
-  "Please refund me",
-  {
+const refund = await decide("Please refund me", {
     refund: {
       type: "noul",
       instructions: "Is a refund requested?",
@@ -30,7 +28,7 @@ const topic = await decide("The build is broken on main, CI fails", {
 });
 console.log("topic:", JSON.stringify(topic.answers.topic));
 
-const german = await decide({ body: "Der Kunde wurde zweimal belastet" }, {
+const german = await decide({ state: "Der Kunde wurde zweimal belastet" }, {
   department: {
     type: "choice",
     instructions: "Which department should handle this request?",
@@ -42,21 +40,3 @@ const german = await decide({ body: "Der Kunde wurde zweimal belastet" }, {
   },
 });
 console.log("german:", JSON.stringify(german.answers.department));
-
-const result = await decide("Please refund my duplicate charge", {
-  department: {
-    type: "choice",
-    instructions: "Which team should handle this request?",
-    criteria: {
-      billing: "charges, invoices, payments, and refunds",
-      technical: "bugs, outages, and API problems",
-      sales: "pricing, demos, and new purchases",
-    },
-  },
-  refund: {
-    type: "noul",
-    instructions: "Does the customer request a refund?",
-  },
-});
-
-console.log("result:", JSON.stringify(result, null, 2));
