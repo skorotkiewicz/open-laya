@@ -52,6 +52,13 @@ class FakeRequest:
     def __init__(self, scope, receive):
         self.scope, self._receive = scope, receive
 
+    @property
+    def headers(self):
+        return {
+            key.decode("latin-1"): value.decode("latin-1")
+            for key, value in self.scope.get("headers", [])
+        }
+
     async def body(self):
         return (await self._receive())["body"]
 
@@ -231,19 +238,24 @@ import asyncio
 captured = {}
 
 
-async def fake_systemone(request):
+HEADER_DEFAULT = object()
+
+
+async def fake_systemone(request, authorization=HEADER_DEFAULT):
     captured["payload"] = json.loads((await request.receive())["body"])
+    captured["authorization"] = authorization
     return "ok"
 
 
 srv.systemone = fake_systemone
 
 
-async def run_decision(payload):
+async def run_decision(payload, authorization=None):
     async def receive():
         return {"type": "http.request", "body": json.dumps(payload).encode()}
 
-    return await srv.decisions(srv.Request({}, receive))
+    headers = [] if authorization is None else [(b"authorization", authorization.encode())]
+    return await srv.decisions(srv.Request({"headers": headers}, receive))
 
 
 out = asyncio.run(
@@ -251,12 +263,14 @@ out = asyncio.run(
         {
             "state": "hi",
             "questions": {"q1": {"type": "choice", "prompt": "p", "choices": ["a", "b"]}},
-        }
+        },
+        authorization="Bearer test",
     )
 )
 assert out == "ok", out
 assert captured["payload"]["questions"]["q1"]["criteria"] == {"a": "a", "b": "b"}, captured
-print("9. /v1/decisions expands choice aliases before systemone OK")
+assert captured["authorization"] == "Bearer test", captured
+print("9. /v1/decisions expands aliases and forwards authorization OK")
 
 out = asyncio.run(run_decision({"state": "hi", "questions": {"q1": {"type": "score", "prompt": "p"}}}))
 assert out == (

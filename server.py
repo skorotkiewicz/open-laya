@@ -76,7 +76,8 @@ async def decisions(request: Request) -> Response:
             payload["questions"] = normalize_questions(payload["questions"])
         except ToolError as exc:
             return JSONResponse({"detail": exc.message}, status_code=400)
-    return await systemone(Request(request.scope, _replay(json.dumps(payload).encode())))
+    replayed = Request(request.scope, _replay(json.dumps(payload).encode()))
+    return await systemone(replayed, request.headers.get("authorization"))
 
 
 app.add_api_route("/v1/decisions", decisions, methods=["POST"], include_in_schema=False)

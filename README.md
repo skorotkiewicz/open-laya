@@ -10,6 +10,8 @@ python -m venv .venv
 python -m pip install 'laya[serve,mcp]'
 python server.py
 
+LAYA_API_KEY=test python server.py 
+
 # .venv/bin/pip install (-q) torch --index-url https://download.pytorch.org/whl/cpu
 #  pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu128
 # .venv/bin/pip install (-q) 'laya[langchain]'
@@ -19,6 +21,11 @@ Send a decision request:
 
 ```sh
 curl -H 'Content-Type: application/json' \
+  -d '{"state":"Please refund my order","questions":{"refund":{"type":"noul","instructions":"Does the customer request a refund?"}}}' \
+  http://localhost:8000/v1/decisions
+
+# with api key
+curl -H 'Content-Type: application/json' -H 'Authorization: Bearer test' \
   -d '{"state":"Please refund my order","questions":{"refund":{"type":"noul","instructions":"Does the customer request a refund?"}}}' \
   http://localhost:8000/v1/decisions
 ```
