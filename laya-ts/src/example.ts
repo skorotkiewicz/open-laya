@@ -28,15 +28,15 @@ const topic = await decide("The build is broken on main, CI fails", {
 });
 console.log("topic:", JSON.stringify(topic.answers.topic));
 
-const german = await decide({ state: "Der Kunde wurde zweimal belastet" }, {
+const german = await decide("Der Kunde wurde zweimal belastet", {
   department: {
     type: "choice",
-    instructions: "Which department should handle this request?",
+    instructions: "Welche Abteilung soll diese Anfrage bearbeiten?",
     criteria: {
-      billing: "invoices, payments, refunds",
-      technical: "bugs, outages",
-      other: "rest",
+      billing: "Rechnungen, Zahlungen, Rückerstattungen und doppelte Abbuchungen",
+      technical: "Fehler, Ausfälle und technische Probleme",
+      other: "alles andere",
     },
   },
 });
-console.log("german:", JSON.stringify(german.answers.department));
+console.log(JSON.stringify(german.answers.department));
