@@ -11,6 +11,7 @@ the response's routing.model shows the checkpoint Laya selected.
 """
 
 import hmac
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -28,6 +29,11 @@ try:
 except ModuleNotFoundError:
     from mcp.server.fastmcp import FastMCP  # MCP 1.x
     mcp_v2 = False
+
+if mcp_v2:
+    from mcp.server.mcpserver.exceptions import ToolError as McpToolError
+else:
+    from mcp.server.fastmcp.exceptions import ToolError as McpToolError
 
 # Keep model loads lazy unless the operator explicitly asks for startup preload.
 os.environ.setdefault("LAYA_PRELOAD", "0")
@@ -51,14 +57,85 @@ mcp_security = TransportSecuritySettings(
 mcp = FastMCP("laya") if mcp_v2 else FastMCP("laya", transport_security=mcp_security)
 
 
+def normalize_questions(questions):
+    """Map friendly question aliases onto Laya's schema.
+
+    Laya's MCP validator requires every question to carry a non-empty
+    ``instructions`` string (and ``criteria`` for choice/score types), a
+    *choice* ``criteria`` object of label -> description, and a *score*
+    ``criteria`` list of rubric levels. Callers often send ``prompt`` and
+    ``choices``/``options`` instead, or a choice ``criteria`` list, which made
+    laya_predict and laya_route fail with redacted "Error executing tool"
+    messages. Accept both spellings, expand a choice criteria list
+    ["a", "b"] to {"a": "a", "b": "b"} (the same expansion
+    ``Agent._to_internal`` performs downstream), and fail early with a
+    per-question message that survives the trip to the client.
+    """
+    if not isinstance(questions, dict) or not questions:
+        raise ToolError("invalid_questions", "questions must be a non-empty object")
+    normalized = {}
+    for name, question in questions.items():
+        if not isinstance(question, dict):
+            raise ToolError("invalid_questions", f"questions[{name}] must be an object")
+        question = dict(question)
+        if not isinstance(question.get("instructions"), str) or not question["instructions"].strip():
+            alias = None
+            for key in ("prompt", "question", "text"):
+                value = question.pop(key, None)
+                if isinstance(value, str) and value.strip():
+                    alias = value
+                    break
+                question.pop(key, None)
+            if alias is None:
+                raise ToolError(
+                    "invalid_questions",
+                    f"questions[{name}].instructions must be a non-empty string",
+                )
+            question["instructions"] = alias.strip()
+        if not question.get("criteria"):
+            for key in ("choices", "options"):
+                value = question.pop(key, None)
+                if value:
+                    question["criteria"] = value
+                    break
+                question.pop(key, None)
+        if not question.get("type"):
+            question["type"] = "choice" if question.get("criteria") else "noul"
+        if question["type"] in ("choice", "score") and not question.get("criteria"):
+            raise ToolError(
+                "invalid_questions",
+                f"questions[{name}].criteria is required for type '{question['type']}'",
+            )
+        if question["type"] == "choice" and isinstance(question["criteria"], list):
+            labels = question["criteria"]
+            if not labels or not all(isinstance(c, str) and c.strip() for c in labels):
+                raise ToolError(
+                    "invalid_questions",
+                    f"questions[{name}].criteria as a list must contain non-empty strings",
+                )
+            question["criteria"] = {label: label for label in labels}
+        normalized[name] = question
+    return normalized
+
+
 def mcp_result(fn, *args, **kwargs):
+    """Run fn; raise McpToolError so isError=true AND the message reaches the client.
+
+    mcp 2.x wraps any other exception as UnexpectedToolError("Error executing
+    tool <name>") and redacts the original message. Only the SDK's own
+    ToolError keeps our JSON payload on the wire, so schema mistakes come back
+    to the LLM as a readable hint it can retry against, instead of a bare
+    "Error executing tool laya_predict".
+    """
     try:
         return fn(*args, **kwargs)
     except ToolError as exc:
-        raise ValueError(exc.message) from None
-    except Exception:
+        raise McpToolError(json.dumps({"error": exc.code, "message": exc.message})) from None
+    except Exception as exc:
         logging.exception("MCP tool failed")
-        raise ValueError("MCP tool failed") from None
+        raise McpToolError(
+            json.dumps({"error": "internal_error", "message": f"{type(exc).__name__}: {exc}"})
+        ) from None
 
 
 @mcp.tool(name="laya_status")
@@ -70,14 +147,28 @@ def mcp_status() -> dict:
 
 @mcp.tool(name="laya_route")
 def mcp_route(state: dict, questions: dict) -> dict:
-    """Preview which checkpoint will handle typed questions."""
-    return mcp_result(laya_route, state, questions, router=router)
+    """Preview which checkpoint will handle typed questions.
+
+    Each question: {"type": "noul"|"choice"|"score", "instructions": str,
+    "criteria": {"label": "description"} for choice, [str, ...] for score}.
+    "prompt"/"question"/"text" and "choices"/"options" are accepted as
+    aliases for "instructions"/"criteria"; a choice criteria list
+    ["a", "b"] is expanded to {"a": "a", "b": "b"}.
+    """
+    return mcp_result(lambda: laya_route(state, normalize_questions(questions), router=router))
 
 
 @mcp.tool(name="laya_predict")
 def mcp_predict(state: dict, questions: dict, model: str = "auto") -> dict:
-    """Answer typed choice, score, or noul questions with Laya."""
-    return mcp_result(laya_predict, state, questions, model, router=router)
+    """Answer typed choice, score, or noul questions with Laya.
+
+    Each question: {"type": "noul"|"choice"|"score", "instructions": str,
+    "criteria": {"label": "description"} for choice, [str, ...] for score}.
+    "prompt"/"question"/"text" and "choices"/"options" are accepted as
+    aliases for "instructions"/"criteria"; a choice criteria list
+    ["a", "b"] is expanded to {"a": "a", "b": "b"}.
+    """
+    return mcp_result(lambda: laya_predict(state, normalize_questions(questions), model, router=router))
 
 
 @mcp.tool(name="laya_preset")
