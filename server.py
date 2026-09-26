@@ -19,16 +19,19 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi import Request
 from laya.serve import build_router, create_app
 from laya.mcp.tools import ToolError, laya_predict, laya_preset, laya_route, laya_status
 from mcp.server.transport_security import TransportSecuritySettings
 
 try:
     from mcp.server.mcpserver import MCPServer as FastMCP  # MCP 2.x
+
     mcp_v2 = True
 except ModuleNotFoundError:
     from mcp.server.fastmcp import FastMCP  # MCP 1.x
+
     mcp_v2 = False
 
 if mcp_v2:
@@ -43,8 +46,38 @@ app = create_app(router=router)
 
 # Use Laya's own request validation, inference worker, and optional API key.
 systemone = next(route.endpoint for route in app.routes if route.path == "/v1/systemone")
-app.add_api_route("/v1/decisions", systemone, methods=["POST"], include_in_schema=False)
-app.add_api_route("/decisions", systemone, methods=["POST"], include_in_schema=False)
+
+
+def _replay(body):
+    async def receive():
+        return {"type": "http.request", "body": body}
+
+    return receive
+
+
+async def decisions(request: Request) -> Response:
+    """Alias for /v1/systemone that accepts the friendly question aliases.
+
+    Runs normalize_questions (prompt/question/text, choices/options, choice
+    criteria list expansion) before delegating to Laya's native endpoint, so
+    HTTP clients get the same leniency as the MCP tools instead of
+    "a choice question takes 'criteria' as a dict of label -> description".
+    """
+    body = await request.body()
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, dict) and "questions" in payload:
+        try:
+            payload["questions"] = normalize_questions(payload["questions"])
+        except ToolError as exc:
+            return JSONResponse({"detail": exc.message}, status_code=400)
+    return await systemone(Request(request.scope, _replay(json.dumps(payload).encode())))
+
+
+app.add_api_route("/v1/decisions", decisions, methods=["POST"], include_in_schema=False)
+app.add_api_route("/decisions", decisions, methods=["POST"], include_in_schema=False)
 
 
 # @app.get("/tetris", include_in_schema=False)
@@ -151,8 +184,11 @@ def mcp_result(fn, *args, **kwargs):
 @mcp.tool(name="laya_status")
 def mcp_status() -> dict:
     """Report loaded checkpoints and device information."""
-    return mcp_result(laya_status, router=router,
-                      preload=os.environ["LAYA_PRELOAD"].lower() in ("1", "true", "yes", "on"))
+    return mcp_result(
+        laya_status,
+        router=router,
+        preload=os.environ["LAYA_PRELOAD"].lower() in ("1", "true", "yes", "on"),
+    )
 
 
 @mcp.tool(name="laya_route")
@@ -186,13 +222,17 @@ def mcp_preset(preset: str, state: dict) -> dict:
     """Run a guard, moderation, triage, or model_router preset."""
     import laya
 
-    return mcp_result(laya_preset, preset, state, router=router,
-                      preset_builder=lambda name: getattr(laya, name)())
+    return mcp_result(
+        laya_preset,
+        preset,
+        state,
+        router=router,
+        preset_builder=lambda name: getattr(laya, name)(),
+    )
 
 
 # A mounted app does not inherit the parent's lifespan or /v1/systemone auth.
-mcp_app = (mcp.streamable_http_app(transport_security=mcp_security)
-           if mcp_v2 else mcp.streamable_http_app())
+mcp_app = mcp.streamable_http_app(transport_security=mcp_security) if mcp_v2 else mcp.streamable_http_app()
 original_lifespan = app.router.lifespan_context
 
 
@@ -220,5 +260,8 @@ app.mount("/", protected_mcp)
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host=os.environ.get("LAYA_HOST", "0.0.0.0"),
-                port=int(os.environ.get("LAYA_PORT", "8000")))
+    uvicorn.run(
+        app,
+        host=os.environ.get("LAYA_HOST", "0.0.0.0"),
+        port=int(os.environ.get("LAYA_PORT", "8000")),
+    )
