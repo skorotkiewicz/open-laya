@@ -41,6 +41,9 @@ else:
 
 # Keep model loads lazy unless the operator explicitly asks for startup preload.
 os.environ.setdefault("LAYA_PRELOAD", "0")
+os.environ.setdefault("LAYA_MAX_LOADED", "1")
+os.environ.setdefault("LAYA_DEFAULT_MODEL", "multilingual")
+# os.environ.setdefault("LAYA_API_KEY", "test")
 router = build_router()
 app = create_app(router=router)
 

@@ -9,6 +9,10 @@ python -m venv .venv
 . .venv/bin/activate
 python -m pip install 'laya[serve,mcp]'
 python server.py
+
+# .venv/bin/pip install (-q) torch --index-url https://download.pytorch.org/whl/cpu
+#  pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu128
+# .venv/bin/pip install (-q) 'laya[langchain]'
 ```
 
 Send a decision request:
