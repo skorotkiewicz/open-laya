@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/example.ts",
+    "snake": "node examples/snake.mjs",
+    "try-ml": "node examples/try-ml.mjs",
     "check": "node --check src/client.ts && node --check src/example.ts && node --check examples/snake.mjs && node --check examples/try-ml.mjs"
   }
 }
