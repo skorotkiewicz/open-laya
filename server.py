@@ -14,6 +14,7 @@ import hmac
 import json
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -118,6 +119,14 @@ def normalize_questions(questions):
     return normalized
 
 
+# Laya's Rust-backed tokenizer mutates truncation config on every call
+# (transformers tokenization_utils_fast.py set_truncation_and_padding), which is
+# not thread-safe: two concurrent predict calls panic with
+# "RuntimeError: Already borrowed". Sync MCP tools run in a threadpool, so a
+# plain lock serializes inference. Calls take ~0.2-1s, so the cost is negligible.
+_infer_lock = threading.Lock()
+
+
 def mcp_result(fn, *args, **kwargs):
     """Run fn; raise McpToolError so isError=true AND the message reaches the client.
 
@@ -128,7 +137,8 @@ def mcp_result(fn, *args, **kwargs):
     "Error executing tool laya_predict".
     """
     try:
-        return fn(*args, **kwargs)
+        with _infer_lock:
+            return fn(*args, **kwargs)
     except ToolError as exc:
         raise McpToolError(json.dumps({"error": exc.code, "message": exc.message})) from None
     except Exception as exc:

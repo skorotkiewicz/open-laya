@@ -147,5 +147,37 @@ out = srv.mcp_predict(
 assert out["answers"]["q1"]["criteria"] == {"a": "a", "b": "b"}
 print("7. mcp_predict end-to-end OK")
 
+# 8. mcp_result serializes concurrent calls (the "Already borrowed" tokenizer race)
+import threading
+import time
+
+active, max_active = 0, 0
+results = []
+
+def slow_fn():
+    global active, max_active
+    active += 1
+    max_active = max(max_active, active)
+    time.sleep(0.05)
+    active -= 1
+    return "ok"
+
+threads = [threading.Thread(target=lambda: results.append(safe_call())) for _ in range(8)]
+
+def safe_call():
+    try:
+        return srv.mcp_result(slow_fn)
+    except Exception as e:  # noqa: BLE001 - test records failures too
+        return f"FAILED: {e}"
+
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+
+assert results == ["ok"] * 8, results
+assert max_active == 1, f"calls overlapped: max_concurrent={max_active}"
+print(f"8. mcp_result serializes concurrent calls OK (8 threads, max_concurrent={max_active})")
+
 print()
 print("ALL CHECKS PASSED")
