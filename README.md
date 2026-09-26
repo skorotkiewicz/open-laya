@@ -10,7 +10,7 @@ python -m venv .venv
 python -m pip install 'laya[serve,mcp]'
 python server.py
 
-LAYA_API_KEY=test python server.py 
+LAYA_API_KEY=your-key python server.py 
 
 # .venv/bin/pip install (-q) torch --index-url https://download.pytorch.org/whl/cpu
 #  pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu128
@@ -25,7 +25,7 @@ curl -H 'Content-Type: application/json' \
   http://localhost:8000/v1/decisions
 
 # with api key
-curl -H 'Content-Type: application/json' -H 'Authorization: Bearer test' \
+curl -H 'Content-Type: application/json' -H 'Authorization: Bearer your-key' \
   -d '{"state":"Please refund my order","questions":{"refund":{"type":"noul","instructions":"Does the customer request a refund?"}}}' \
   http://localhost:8000/v1/decisions
 ```
