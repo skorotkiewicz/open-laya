@@ -12,6 +12,21 @@ Override the server URL when needed:
 LAYA_BASE_URL=http://127.0.0.1:8000 LAYA_API_KEY=your-key npm --prefix laya-ts start
 ```
 
+Run the Snake example interactively or headless:
+
+```sh
+LAYA_API_KEY=your-key node laya-ts/examples/snake.mjs
+LAYA_API_KEY=your-key node laya-ts/examples/snake.mjs --ticks 20
+```
+
+Use `--url http://host:port` to override `LAYA_BASE_URL`. After five API errors, Snake continues with its built-in heuristic.
+
+Run the multilingual example:
+
+```sh
+LAYA_API_KEY=your-key node laya-ts/examples/try-ml.mjs
+```
+
 Import the client from `src/client.ts`:
 
 ```ts
