@@ -30,6 +30,116 @@ curl -H 'Content-Type: application/json' -H 'Authorization: Bearer your-key' \
   http://localhost:8000/v1/decisions
 ```
 
+All at once:
+
+```sh
+curl http://192.168.0.124:8000/v1/decisions -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my-api-key" \
+  -d '{
+    "state": "Help! My payouts have been failing for 3 days.",
+    "questions": {
+      "is_urgent": {
+        "type": "noul",
+        "instructions": "Does this message convey urgency?",
+        "criteria": {
+          "true": "Explicitly time-sensitive",
+          "false": "No urgency expressed"
+        }
+      },
+      "department": {
+        "type": "choice",
+        "instructions": "Which team should handle this?",
+        "criteria": {
+          "billing": "Payments, invoicing, refunds",
+          "technical": "Bugs, outages, integrations",
+          "sales": "Pricing, upgrades, new accounts"
+        }
+      },
+      "frustration": {
+        "type": "score",
+        "instructions": "How frustrated is the customer?",
+        "criteria": ["Calm", "Frustrated", "Very angry"]
+      }
+    }
+  }'
+```
+
+<details>
+  <summary>Output:</summary>
+
+```json
+{
+  "model": "laya-rl-agent",
+  "answers": {
+    "is_urgent": {
+      "type": "noul",
+      "noul": 0.7875,
+      "confidence": 0.7875,
+      "answer_confidence": 0.7875,
+      "action": {
+        "act_probability": 1.0
+      }
+    },
+    "department": {
+      "type": "choice",
+      "choice": "billing",
+      "probabilities": {
+        "billing": 0.8362,
+        "technical": 0.0941,
+        "sales": 0.0698
+      },
+      "confidence": 0.4924,
+      "answer_confidence": 0.8362,
+      "action": {
+        "act_probability": 1.0
+      }
+    },
+    "frustration": {
+      "type": "score",
+      "score": 1.0886,
+      "legend": {
+        "0": "Calm",
+        "1": "Frustrated",
+        "2": "Very angry"
+      },
+      "probabilities": {
+        "0": 0.0318,
+        "1": 0.8478,
+        "2": 0.1204
+      },
+      "confidence": 0.5408,
+      "answer_confidence": 0.8478,
+      "action": {
+        "act_probability": 1.0
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 143,
+    "output_tokens": 0
+  },
+  "routing": {
+    "model": "english",
+    "repo": "convaiinnovations/laya",
+    "reason": "English Latin text",
+    "detection": {
+      "script": "latin",
+      "script_profile": {
+        "latin": 1.0
+      },
+      "language": "en",
+      "is_english": true,
+      "language_undecided": false,
+      "diacritic_rate": 0.0,
+      "non_latin_fraction": 0.0
+    },
+    "workflow": null
+  }
+}
+```
+
+</details>
+
 This adapter uses Laya's maintained `laya.serve` API. `POST /v1/systemone` is the native endpoint; `/v1/decisions` and `/decisions` are aliases. Laya chooses a checkpoint by language unless you set a known `model` in the request. `GET /health` lists loaded checkpoints.
 
 The first decision can download weights from Hugging Face. Set `LAYA_PRELOAD=1` to load all checkpoints at startup. Set `LAYA_API_KEY` to require a bearer token for both decision requests and MCP.
