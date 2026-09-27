@@ -30,7 +30,8 @@ curl -H 'Content-Type: application/json' -H 'Authorization: Bearer your-key' \
   http://localhost:8000/v1/decisions
 ```
 
-All at once:
+<details>
+  <summary>All at once:</summary>
 
 ```sh
 curl http://192.168.0.124:8000/v1/decisions -H "Content-Type: application/json" \
@@ -138,6 +139,7 @@ curl http://192.168.0.124:8000/v1/decisions -H "Content-Type: application/json" 
 }
 ```
 
+</details>
 </details>
 
 This adapter uses Laya's maintained `laya.serve` API. `POST /v1/systemone` is the native endpoint; `/v1/decisions` and `/decisions` are aliases. Laya chooses a checkpoint by language unless you set a known `model` in the request. `GET /health` lists loaded checkpoints.
